@@ -1,57 +1,57 @@
-const express = require('express');
-const http = require('http');
-const socketIO = require('socket.io');
-const cors = require('cors'); // Include CORS middleware if needed
+const express = require("express");
+const http = require("http");
+const socketIO = require("socket.io");
+const cors = require("cors"); // Import CORS
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 
-// Middleware to handle CORS, if necessary
-app.use(cors());
-
-// Serve static files from the 'public' directory
-app.use(express.static('public'));
-
 const waitingPlayers = [];
 
+// Enable CORS for all origins
+app.use(cors());
+
 // Handle WebSocket connections
-io.on('connection', (socket) => {
-    console.log('A user connected');
+io.on("connection", (socket) => {
+  console.log("A user connected");
 
-    waitingPlayers.push(socket);
-    console.log(`Player added to queue. Queue length: ${waitingPlayers.length}`);
+  // Notify everyone that a new user has connected
+  io.emit("userConnected", "A new player has connected!");
 
-    if (waitingPlayers.length >= 2) {
-        const player1 = waitingPlayers.shift();
-        const player2 = waitingPlayers.shift();
+  waitingPlayers.push(socket);
+  console.log(`Player added to queue. Queue length: ${waitingPlayers.length}`);
 
-        const roomId = Math.random().toString(36).substring(2, 9);
+  if (waitingPlayers.length >= 2) {
+    const player1 = waitingPlayers.shift();
+    const player2 = waitingPlayers.shift();
 
-        player1.join(roomId);
-        player2.join(roomId);
+    const roomId = Math.random().toString(36).substring(2, 9);
+    player1.join(roomId);
+    player2.join(roomId);
 
-        player1.emit('roomCreated', roomId);
-        player2.emit('roomCreated', roomId);
+    player1.emit("roomCreated", roomId);
+    player2.emit("roomCreated", roomId);
 
-        io.to(roomId).emit('gameStart');
+    io.to(roomId).emit("gameStart");
+  }
+
+  socket.on("click", (roomId) => {
+    io.to(roomId).emit("updateClick", socket.id);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("A user disconnected");
+    const index = waitingPlayers.indexOf(socket);
+    if (index !== -1) {
+      waitingPlayers.splice(index, 1);
     }
-
-    socket.on('click', (roomId) => {
-        io.to(roomId).emit('updateClick', socket.id);
-    });
-
-    socket.on('disconnect', () => {
-        console.log('A user disconnected');
-        const index = waitingPlayers.indexOf(socket);
-        if (index !== -1) {
-            waitingPlayers.splice(index, 1);
-        }
-        io.emit('playerDisconnected', socket.id);
-    });
+    io.emit("playerDisconnected", socket.id);
+  });
 });
 
 const PORT = process.env.PORT || 3000;
+
 server.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
