@@ -1,63 +1,79 @@
 const express = require('express');
+
 const http = require('http');
-const { Server } = require('socket.io');
+
+const socketIO = require('socket.io');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
 
-let rooms = {};
+const server = http.createServer(app);
+
+const io = socketIO(server);
+
+const waitingPlayers = [];
+
+// Serve static files from the 'public' directory
+
+app.use(express.static('public'));
+
+// Handle WebSocket connections
 
 io.on('connection', (socket) => {
-    console.log('a user connected:', socket.id);
 
-    socket.on('joinGame', () => {
-        let roomId = findAvailableRoom();
-        socket.join(roomId);
+    console.log('A user connected');
 
-        if (!rooms[roomId]) {
-            rooms[roomId] = { player1: socket.id, player2: null, player1Score: 0, player2Score: 0 };
-        } else if (!rooms[roomId].player2) {
-            rooms[roomId].player2 = socket.id;
-            io.to(roomId).emit('startGame', roomId);
-        }
+    waitingPlayers.push(socket);
 
-        socket.on('click', () => {
-            if (rooms[roomId].player1 === socket.id) {
-                rooms[roomId].player1Score++;
-            } else if (rooms[roomId].player2 === socket.id) {
-                rooms[roomId].player2Score++;
-            }
+    console.log(`Player added to queue. Queue length: ${waitingPlayers.length}`);
 
-            io.to(roomId).emit('updateScores', {
-                player1Score: rooms[roomId].player1Score,
-                player2Score: rooms[roomId].player2Score
-            });
-        });
+    if (waitingPlayers.length >= 2) {
 
-        socket.on('disconnect', () => {
-            console.log('user disconnected:', socket.id);
-            if (rooms[roomId]) {
-                delete rooms[roomId];
-                io.to(roomId).emit('endGame');
-            }
-        });
-    });
-});
+        const player1 = waitingPlayers.shift();
 
-function findAvailableRoom() {
-    for (let roomId in rooms) {
-        if (rooms[roomId].player1 && !rooms[roomId].player2) {
-            return roomId;
-        }
+        const player2 = waitingPlayers.shift();
+
+        const roomId = Math.random().toString(36).substring(2, 9);
+
+        player1.join(roomId);
+
+        player2.join(roomId);
+
+        player1.emit('roomCreated', roomId);
+
+        player2.emit('roomCreated', roomId);
+
+        io.to(roomId).emit('gameStart');
+
     }
-    return 'room-' + Math.floor(Math.random() * 10000);
-}
 
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html');
+    socket.on('click', (roomId) => {
+
+        io.to(roomId).emit('updateClick', socket.id);
+
+    });
+
+    socket.on('disconnect', () => {
+
+        console.log('A user disconnected');
+
+        const index = waitingPlayers.indexOf(socket);
+
+        if (index !== -1) {
+
+            waitingPlayers.splice(index, 1);
+
+        }
+
+        io.emit('playerDisconnected', socket.id);
+
+    });
+
 });
 
-server.listen(3000, () => {
-    console.log('listening on *:3000');
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+
+    console.log(`Server is running on port ${PORT}`);
+
 });
